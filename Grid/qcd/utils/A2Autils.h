@@ -74,6 +74,45 @@ public:
     MesonField(mat,lhs_wi,rhs_vj,gammas,mom,orthogdim);
   }
 
+  // Applies Gamma(g) * in(x) -> out(x) site-wise. Used by A2AMesonFieldOpt to
+  // pre-contract right vectors before A2ASpatialSum (see A2ASpatialSum.h).
+  static void GammaRight(FermionField       &out,
+                          Gamma::Algebra      g,
+                          const FermionField &in);
+
+  template <typename TensorType>
+  static void StagMesonField(TensorType &mat,
+            const FermionField *lhs_wi,
+            const FermionField *rhs_vj,
+            int orthogdim,
+            double *t_kernel,
+            double *t_gsum = nullptr);
+    
+  static void PionFieldWVmom(Eigen::Tensor<ComplexD,4> &mat,
+			     const FermionField *wi,
+			     const FermionField *vj,
+			     const std::vector<ComplexField > &mom,
+			     int orthogdim);
+
+  static void PionFieldXX(Eigen::Tensor<ComplexD,3> &mat, 
+			  const FermionField *wi,
+			  const FermionField *vj,
+			  int orthogdim,
+			  int g5);
+  
+  static void PionFieldWV(Eigen::Tensor<ComplexD,3> &mat, 
+			  const FermionField *wi,
+			  const FermionField *vj,
+			  int orthogdim);
+  static void PionFieldWW(Eigen::Tensor<ComplexD,3> &mat, 
+			  const FermionField *wi,
+			  const FermionField *wj,
+			  int orthogdim);
+  static void PionFieldVV(Eigen::Tensor<ComplexD,3> &mat, 
+			  const FermionField *vi,
+			  const FermionField *vj,
+			  int orthogdim);
+
   template <typename TensorType> // output: rank 5 tensor, e.g. Eigen::Tensor<ComplexD, 5>
   static void AslashField(TensorType &mat, 
 			  const FermionField *lhs_wi,
@@ -376,6 +415,175 @@ void A2Autils<FImpl>::AslashField(TensorType &mat,
   }
 }
 
+
+template <class FImpl>
+void A2Autils<FImpl>::GammaRight(FermionField       &out,
+                                   Gamma::Algebra      g,
+                                   const FermionField &in)
+{
+  GridBase     *grid   = in.Grid();
+  int           Nsimd  = grid->Nsimd();
+  uint64_t      oSites = grid->oSites();
+  Gamma::Algebra ga    = g;
+  autoView(out_v, out, AcceleratorWrite);
+  autoView(in_v,  in,  AcceleratorRead);
+  accelerator_for(ss, oSites, (size_t)Nsimd, {
+    coalescedWrite(out_v[ss], Gamma(ga) * in_v(ss));
+  });
+}
+
+//
+// meson field with user defined v,w vecs.
+// No gammas or mom done here
+// specialized to sparse case for 144c on Frontera
+// left and right are the same, with both v,w: v0,w0,v1,w1,...
+template <class FImpl>
+template <typename TensorType>
+void A2Autils<FImpl>::StagMesonField(TensorType &mat,
+                                     const FermionField *lhs_wi,
+                                     const FermionField *rhs_vj,
+                                     int orthogdim,
+                                     double *t_kernel,
+                                     double *t_gsum)
+{
+    typedef typename FImpl::SiteSpinor vobj;
+
+    typedef typename vobj::scalar_object sobj;
+    typedef typename vobj::scalar_type scalar_type;
+    typedef typename vobj::vector_type vector_type;
+
+    typedef iSinglet<vector_type> Singlet_v;
+    typedef iSinglet<scalar_type> Singlet_s;
+
+    int Lblock = mat.dimension(3);
+    int Rblock = mat.dimension(4);
+
+    //GridBase *grid = lhs_wi[0]._grid;
+    GridBase *grid = lhs_wi[0].Grid();
+
+    const int    Nd = grid->_ndimension;
+    const int Nsimd = grid->Nsimd();
+
+    int Nt     = grid->GlobalDimensions()[orthogdim];
+    int Ngamma = 1;
+    int Nmom   = 1;
+
+    int fd=grid->_fdimensions[orthogdim];
+    int ld=grid->_ldimensions[orthogdim];
+    int rd=grid->_rdimensions[orthogdim];
+
+    // will locally sum vectors first
+    // sum across these down to scalars
+    // splitting the SIMD
+    int MFrvol = rd*Lblock*Rblock*Nmom*Ngamma;
+    int MFlvol = ld*Lblock*Rblock*Nmom*Ngamma;
+
+    Vector<Singlet_v> lvSum(MFrvol);
+    Vector<Singlet_s> lsSum(MFlvol);
+    // Initialize working variables
+    thread_for(r, MFrvol,{
+      lvSum[r] = Zero();
+    });
+    thread_for(r, MFlvol,{
+      lsSum[r]=scalar_type(0.0);
+    });
+    int e1=    grid->_slice_nblock[orthogdim];
+    int e2=    grid->_slice_block [orthogdim];
+    int stride=grid->_slice_stride[orthogdim];
+
+    // potentially wasting cores here if local time extent too small
+    if (t_kernel) *t_kernel = -usecond();
+
+    thread_for(r, rd,{
+
+        int so=r*grid->_ostride[orthogdim]; // base offset for start of plane
+
+        for(int n=0;n<e1;n++){
+            for(int b=0;b<e2;b++){
+
+                int ss= so+n*stride+b;
+                for(int i=0;i<Lblock;i++){
+
+                    //auto left = conjugate(lhs_wi[i]._odata[ss]);
+                    auto wi_v  = lhs_wi[i].View(CpuRead);
+                    auto left = conjugate(wi_v[ss]);
+
+                    for(int j=0;j<Rblock;j++){
+
+                        Singlet_v vv;
+                        //auto right = rhs_vj[j]._odata[ss];
+                        auto vj_v = rhs_vj[j].View(CpuRead);
+                        auto right = vj_v[ss];
+
+                        vv()()() = left()()(0) * right()()(0)
+                                    + left()()(1) * right()()(1)
+                                    + left()()(2) * right()()(2);
+
+                        int base = Ngamma*Nmom*(i+Lblock*j+Lblock*Rblock*r);
+                        int idx = base;
+                        add(&lvSum[idx],&vv,&lvSum[idx]);
+                    }
+                }
+            }
+        }
+    });
+
+    // Sum across simd lanes in the plane, breaking out orthog dir.
+    thread_for(rt, rd,{
+        Coordinate icoor(Nd);
+        ExtractBuffer<Singlet_s> extracted(Nsimd);
+        for(int i=0;i<Lblock;i++){
+            for(int j=0;j<Rblock;j++){
+                int ij_rdx = Ngamma*(Nmom*(i+Lblock*j+Lblock*Rblock*rt));
+                extract(lvSum[ij_rdx],extracted);
+                for(int idx=0;idx<Nsimd;idx++){
+                    grid->iCoorFromIindex(icoor,idx);
+                    int ldx    = rt+icoor[orthogdim]*rd;
+                    int ij_ldx = Ngamma*(Nmom*(i+Lblock*j+Lblock*Rblock*ldx));
+                    lsSum[ij_ldx]=lsSum[ij_ldx]+extracted[idx];
+                }
+            }
+        }
+    });
+    if (t_kernel) *t_kernel += usecond();
+    assert(mat.dimension(0) == Nmom);
+    assert(mat.dimension(1) == Ngamma);
+    assert(mat.dimension(2) == Nt);
+
+    // ld loop and local only??
+    int pd = grid->_processors[orthogdim];
+    int pc = grid->_processor_coor[orthogdim];
+    thread_for_collapse(2,lt,ld,{
+
+        for(int pt=0;pt<pd;pt++){
+            int t = lt + pt*ld;
+            if (pt == pc){
+                for(int i=0;i<Lblock;i++){
+                    for(int j=0;j<Rblock;j++){
+                        int ij_dx = Ngamma*(Nmom*(i + Lblock * (j + Rblock * lt)));
+                        mat(0,0,t,i,j) = lsSum[ij_dx];
+                    }
+                }
+            } else {
+                const scalar_type zz(0.0);
+                for(int i=0;i<Lblock;i++){
+                    for(int j=0;j<Rblock;j++){
+                        mat(0,0,t,i,j) =zz;
+                    }
+                }
+            }
+        }
+    });
+    
+    ////////////////////////////////////////////////////////////////////
+    // This global sum is taking as much as 50% of time on 16 nodes
+    // Vector size is 7 x 16 x 32 x 16 x 16 x sizeof(complex) = 2MB - 60MB depending on volume
+    // Healthy size that should suffice
+    ////////////////////////////////////////////////////////////////////
+    if (t_gsum) *t_gsum = -usecond();
+    grid->GlobalSumVector(&mat(0,0,0,0,0),Nmom*Ngamma*Nt*Lblock*Rblock);
+    if (t_gsum) *t_gsum += usecond();
+}
 ////////////////////////////////////////////
 // Schematic thoughts about more generalised four quark insertion
 //
@@ -1549,4 +1757,3 @@ void A2Autils<FImpl>::PionFieldVV(Eigen::Tensor<ComplexD,3> &mat,
 */
 
 NAMESPACE_END(Grid);
-

@@ -1,0 +1,22 @@
+unset CC CXX MPICXX MPICC
+
+../configure \
+    --prefix=/work/09573/vmoningi/vista/Grid-vaishakhi/build \
+    --enable-comms=mpi \
+    --enable-simd=GPU \
+    --enable-gen-simd-width=64 \
+    --enable-shm=nvlink \
+    --enable-accelerator=cuda \
+    --enable-setdevice \
+    --disable-unified \
+    --disable-gparity \
+    --disable-fermion-reps \
+    --with-lime=$CLIME \
+    --with-fftw=$FFTW \
+    --with-gmp=$GMP \
+    --with-mpfr=$MPFR \
+    --with-hdf5=$HDF5 \
+    CXX=nvcc \
+    MPICXX=mpicxx \
+    LDFLAGS="-cudart shared -lcublas -L$MPI_ROOT/lib -lmpi" \
+    CXXFLAGS="-ccbin g++ -gencode arch=compute_90,code=sm_90 -std=c++17 -cudart shared -I$MPI_ROOT/include -U__ARM_NEON__ -U__ARM_NEON"
