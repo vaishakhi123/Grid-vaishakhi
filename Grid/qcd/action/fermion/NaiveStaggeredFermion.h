@@ -126,6 +126,43 @@ public:
   DoubledGaugeField &GetU(void)   { return Umu ; } ;
   void CopyGaugeCheckerboards(void);
 
+  // Install an already doubled gauge field (staggered phases, c1/u0 and 1/2 applied)
+  void ImportDoubledGauge(const DoubledGaugeField &U)
+  {
+    Umu = U;
+    CopyGaugeCheckerboards();
+  }
+
+  // Redistribute this operator's doubled gauge field onto clone's split grid. Collective.
+  void SplitDoubledGaugeInto(NaiveStaggeredFermion<Impl> &clone)
+  {
+    DoubledGaugeField sUmu(clone.GaugeGrid());
+    Grid_split(Umu,sUmu);
+    clone.ImportDoubledGauge(sUmu);
+  }
+
+  // Exact type only: a derived operator must provide its own clone
+  virtual SplitOperator<FermionField> *SplitClone(const Coordinate &mpi_split)
+  {
+    if ( typeid(*this) != typeid(NaiveStaggeredFermion<Impl>) ) {
+      return nullptr;
+    }
+    SplitOperator<FermionField> *split = this->MakeSplitGrids(mpi_split);
+
+    // Placeholder links; the doubled field is overwritten below
+    GaugeField Uplaceholder(split->GaugeGrid);
+    Uplaceholder = Zero();
+
+    NaiveStaggeredFermion<Impl> *clone = new NaiveStaggeredFermion<Impl>(Uplaceholder,
+                                                                         *split->GaugeGrid,
+                                                                         *split->GaugeRBGrid,
+                                                                         mass, c1, u0,
+                                                                         this->Params);
+    SplitDoubledGaugeInto(*clone);
+    split->Matrix = clone;
+    return split;
+  }
+
   ///////////////////////////////////////////////////////////////
   // Data members require to support the functionality
   ///////////////////////////////////////////////////////////////

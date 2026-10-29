@@ -63,6 +63,7 @@ NAMESPACE_CHECK(Wilson5D);
 #include <Grid/qcd/action/fermion/NaiveStaggeredFermion.h>
 #include <Grid/qcd/action/fermion/ImprovedStaggeredFermion.h>
 #include <Grid/qcd/action/fermion/ImprovedStaggeredFermion5D.h>
+#include <Grid/qcd/action/fermion/NaiveStaggeredFermion5D.h>
 NAMESPACE_CHECK(Staggered);
 
 #include <Grid/qcd/action/fermion/CayleyFermion5D.h>     // Cayley types
@@ -276,6 +277,9 @@ typedef NaiveStaggeredFermion<StaggeredImplD> NaiveStaggeredFermionD;
 
 typedef ImprovedStaggeredFermion5D<StaggeredImplF> ImprovedStaggeredFermion5DF;
 typedef ImprovedStaggeredFermion5D<StaggeredImplD> ImprovedStaggeredFermion5DD;
+
+typedef NaiveStaggeredFermion5D<StaggeredImplF> NaiveStaggeredFermion5DF;
+typedef NaiveStaggeredFermion5D<StaggeredImplD> NaiveStaggeredFermion5DD;
 
 NAMESPACE_END(Grid);
 
