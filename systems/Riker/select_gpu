@@ -1,0 +1,7 @@
+#!/bin/bash
+# one rank per L40S; bind each rank to the NUMA domain of its GPU.
+# Check the GPU<->NUMA affinity once with: srun -n1 nvidia-smi topo -m
+GPU_MAP=(0 1)
+NUMA_MAP=(0 1)
+export CUDA_VISIBLE_DEVICES=${GPU_MAP[$SLURM_LOCALID]}
+exec numactl -m ${NUMA_MAP[$SLURM_LOCALID]} -N ${NUMA_MAP[$SLURM_LOCALID]} "$@"

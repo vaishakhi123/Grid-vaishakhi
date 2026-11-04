@@ -1,0 +1,23 @@
+# run from Grid/build after `source ../systems/Riker/sourceme.sh`
+unset CC CXX MPICXX MPICC
+
+../configure \
+    --prefix=$RIKER_SW/grid \
+    --enable-comms=mpi-auto \
+    --enable-simd=GPU \
+    --enable-gen-simd-width=64 \
+    --enable-shm=nvlink \
+    --enable-accelerator=cuda \
+    --enable-accelerator-aware-mpi=yes \
+    --disable-unified \
+    --disable-gparity \
+    --disable-fermion-reps \
+    --with-lime=$CLIME \
+    --with-fftw=$FFTW \
+    --with-gmp=$GMP \
+    --with-mpfr=$MPFR \
+    --with-hdf5=$HDF5 \
+    CXX=nvcc \
+    MPICXX=mpicxx \
+    LDFLAGS="-cudart shared -L$CUDA_HOME/lib64 -lcublas" \
+    CXXFLAGS="-ccbin mpicxx -gencode arch=compute_89,code=sm_89 -std=c++17 -cudart shared"
