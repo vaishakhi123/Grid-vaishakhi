@@ -9,9 +9,11 @@
 #SBATCH --gpus-per-node=2
 #SBATCH --exclusive
 
-source $HOME/riker/Riker/sourceme.sh
-SEL=$HOME/riker/Riker/select_gpu
-BENCH=$RIKER_SW/src/Grid/build/benchmarks/Benchmark_staggered
+# SRC = where build.sh put the sources (Lustre scratch); export it before sbatch or edit here
+GRID_SRC=${SRC:-$HOME/riker-sw/src}/Grid
+source $GRID_SRC/systems/Riker/sourceme.sh
+SEL=$GRID_SRC/systems/Riker/select_gpu
+BENCH=$GRID_SRC/build/benchmarks/Benchmark_staggered
 nvidia-smi topo -m
 
 srun -n1 -c32 --gpu-bind=none $SEL $BENCH --grid 16.16.16.32 --mpi 1.1.1.1 --device-mem 16000 --shm 2048

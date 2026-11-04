@@ -2,7 +2,7 @@
 # c-lime and mpfr (no modules on Riker); hdf5 with C++ API only if the module lacks it.
 # Run on a LOGIN node (downloads). Usage: source sourceme.sh; ./build_deps.sh
 set -eo pipefail
-mkdir -p $RIKER_SW/src && cd $RIKER_SW/src
+mkdir -p ${SRC:=$RIKER_SW/src} && cd $SRC
 if [ ! -f $DEPS/lib/liblime.a ]; then
   [ -d c-lime ] || git clone https://github.com/usqcd-software/c-lime.git
   (cd c-lime && ./autogen.sh && ./configure --prefix=$DEPS CC=gcc && make -j16 && make install)
